@@ -1,438 +1,315 @@
-// ─── GLOBAL STATE ────────────────────────────────────────────────
-let allProducts = [];
-let basket = JSON.parse(localStorage.getItem('aygun_basket')) || [];
-let discountAmount = 0;
-let discountType = 'TRY';
-let currentUser = JSON.parse(localStorage.getItem('aygun_user')) || null;
-let selectedPriceTypes = ['dk']; // default seçili fiyat tipi
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
 
-// ─── VERSİYON (JSON metadata'dan gelir) ─────────────────────────
-let currentVersion = 'Yükleniyor...';
-
-// ─── GİRİŞ ──────────────────────────────────────────────────────
-async function checkAuth() {
-  const u = document.getElementById('user-input').value.trim().toLowerCase();
-  const p = document.getElementById('pass-input').value.trim();
-  const errEl = document.getElementById('login-err');
-
-  if (!u || !p) {
-    errEl.style.display = 'block';
-    errEl.textContent = 'E-mail ve şifre boş bırakılamaz.';
-    return;
-  }
-
-  try {
-    const res = await fetch('data/kullanicilar.json?t=' + Date.now());
-    const users = await res.json();
-    const user = users.find(x => x.Email.toLowerCase() === u && x.Sifre === p);
-
-    if (user) {
-      currentUser = user;
-      if (document.getElementById('remember-me').checked) {
-        localStorage.setItem('aygun_user', JSON.stringify(user));
-      }
-      errEl.style.display = 'none';
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app-content').style.display = 'block';
-      loadData();
-    } else {
-      errEl.style.display = 'block';
-      errEl.textContent = 'E-mail veya şifre hatalı!';
-    }
-  } catch (e) {
-    errEl.style.display = 'block';
-    errEl.textContent = 'Bağlantı hatası, tekrar deneyin.';
-  }
+:root {
+  --primary:#0f172a; --primary-mid:#1e293b;
+  --surface:#f8fafc; --surface-2:#f1f5f9;
+  --border:#e2e8f0; --border-strong:#cbd5e1;
+  --accent:#10b981; --accent-dim:#d1fae5; --accent-dark:#059669;
+  --danger:#ef4444; --danger-dim:#fee2e2;
+  --warning:#f59e0b; --warning-dim:#fef3c7;
+  --blue:#3b82f6; --blue-dim:#dbeafe;
+  --text-1:#0f172a; --text-2:#475569; --text-3:#94a3b8;
+  --white:#ffffff;
+  --shadow-sm:0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md:0 4px 16px rgba(0,0,0,0.08);
+  --shadow-lg:0 20px 40px rgba(0,0,0,0.14);
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:20px; --r-full:9999px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{font-size:14px;-webkit-text-size-adjust:100%;touch-action:manipulation;}
+body{
+  font-family:'Outfit',sans-serif;
+  background:var(--surface);color:var(--text-1);line-height:1.5;
+  overscroll-behavior-y:contain;
+  -webkit-font-smoothing:antialiased;
 }
 
-// Enter tuşu ile giriş
-document.addEventListener('DOMContentLoaded', () => {
-  const passInput = document.getElementById('pass-input');
-  if (passInput) {
-    passInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') checkAuth();
-    });
-  }
+/* HAPTIC */
+.haptic-btn{
+  cursor:pointer;border:none;background:none;font-family:inherit;
+  transition:transform 0.08s cubic-bezier(0.34,1.56,0.64,1),filter 0.08s ease;
+  -webkit-tap-highlight-color:transparent;user-select:none;touch-action:manipulation;
+}
+.haptic-btn:active{transform:scale(0.85)!important;filter:brightness(0.80);}
 
-  // Mevcut kullanıcı varsa otomatik giriş
-  if (currentUser) {
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app-content').style.display = 'block';
-    loadData();
-  }
-
-  // Fiyat tipi chip'leri
-  document.querySelectorAll('.price-type-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      chip.classList.toggle('checked');
-      const val = chip.dataset.type;
-      if (chip.classList.contains('checked')) {
-        if (!selectedPriceTypes.includes(val)) selectedPriceTypes.push(val);
-      } else {
-        selectedPriceTypes = selectedPriceTypes.filter(x => x !== val);
-      }
-    });
-  });
-});
-
-// ─── DATA YÜKLEMESİ ─────────────────────────────────────────────
-async function loadData() {
-  try {
-    const res = await fetch('data/urunler.json?v=' + Date.now());
-    const json = await res.json();
-    allProducts = Array.isArray(json.data) ? json.data : json;
-
-    // Versiyon JSON'daki metadata'dan alınır
-    if (json.metadata && json.metadata.v) {
-      currentVersion = json.metadata.v;
-    }
-    const vTag = document.getElementById('v-tag');
-    if (vTag) vTag.innerText = currentVersion;
-
-    checkChanges(json);
-    renderTable(allProducts);
-    updateCartUI();
-  } catch (e) {
-    console.error(e);
-    alert('Ürün listesi yüklenemedi');
-  }
+/* LOGIN */
+#login-screen{
+  position:fixed;inset:0;
+  background:linear-gradient(145deg,#0a1628 0%,#0f2847 45%,#0d1f3a 100%);
+  display:flex;align-items:center;justify-content:center;z-index:9999;
+  overflow:hidden;overscroll-behavior:none;
+}
+#login-screen::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 55% 45% at 15% 25%,rgba(16,185,129,.14) 0%,transparent 65%),
+             radial-gradient(ellipse 45% 55% at 85% 75%,rgba(59,130,246,.10) 0%,transparent 65%);
+  pointer-events:none;
+}
+#login-screen::after{
+  content:'';position:absolute;inset:0;
+  background-image:radial-gradient(rgba(255,255,255,.035) 1px,transparent 1px);
+  background-size:26px 26px;pointer-events:none;
+}
+.login-box{
+  position:relative;z-index:2;
+  width:100%;max-width:370px;padding:44px 36px;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.11);border-radius:24px;
+  backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+  box-shadow:0 32px 80px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.06);
+  animation:loginFadeIn .55s cubic-bezier(.22,1,.36,1) both;margin:16px;
+}
+@keyframes loginFadeIn{from{opacity:0;transform:translateY(28px) scale(.95)}to{opacity:1;transform:translateY(0) scale(1)}}
+.brand-logo{font-size:2.9rem;font-weight:900;color:#fff;letter-spacing:-3px;text-transform:lowercase;display:block;margin-bottom:4px;line-height:1;}
+.brand-logo span{color:var(--accent);font-size:1rem;vertical-align:super;font-weight:400;letter-spacing:0;}
+.login-subtitle{font-size:.75rem;color:rgba(255,255,255,.38);letter-spacing:.10em;text-transform:uppercase;margin-bottom:30px;font-weight:500;}
+.login-field{position:relative;margin-bottom:13px;}
+.login-field-icon{position:absolute;left:13px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.28);font-size:.95rem;pointer-events:none;}
+.login-box input[type="email"],
+.login-box input[type="password"]{
+  width:100%;padding:13px 13px 13px 40px;
+  background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.11);
+  border-radius:var(--r-md);color:#fff;font-family:inherit;font-size:.95rem;outline:none;
+  transition:border-color .2s,background .2s,box-shadow .2s;
+}
+.login-box input::placeholder{color:rgba(255,255,255,.28);}
+.login-box input:focus{border-color:rgba(16,185,129,.55);background:rgba(255,255,255,.10);box-shadow:0 0 0 3px rgba(16,185,129,.13);}
+.remember-label{display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.50);font-size:.82rem;margin:15px 0 20px;cursor:pointer;}
+.remember-label input[type="checkbox"]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;}
+.btn-login{
+  width:100%;padding:14px;
+  background:linear-gradient(135deg,var(--accent) 0%,var(--accent-dark) 100%);
+  color:#fff;border:none;border-radius:var(--r-md);
+  font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 20px rgba(16,185,129,.38);transition:all .10s ease;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+}
+.btn-login:active{transform:scale(.96);box-shadow:0 2px 8px rgba(16,185,129,.20);}
+#login-err{
+  margin-top:11px;padding:9px 13px;
+  background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.28);
+  border-radius:var(--r-sm);color:#fca5a5;font-size:.80rem;text-align:center;
 }
 
-// ─── FİLTRE ─────────────────────────────────────────────────────
-function filterData() {
-  const val = normalizeText(document.getElementById('search').value.trim());
-  const keywords = val.split(' ').filter(k => k.length > 0);
-
-  const filtered = allProducts.filter(u => {
-    const rowText = normalizeText(Object.values(u).join(' '));
-    return keywords.every(kw => rowText.includes(kw));
-  });
-  renderTable(filtered);
+/* CHANGE TOAST */
+#change-toast{
+  position:fixed;top:0;left:0;right:0;z-index:500;
+  pointer-events:none;padding:8px 10px 0;
+  display:flex;flex-direction:column;gap:6px;
 }
-
-function normalizeText(str) {
-  return str
-    .toLowerCase()
-    .replace(/ğ/g, 'g').replace(/ü/g, 'u').replace(/ş/g, 's')
-    .replace(/ı/g, 'i').replace(/ö/g, 'o').replace(/ç/g, 'c')
-    .replace(/İ/g, 'i').replace(/Ğ/g, 'g').replace(/Ü/g, 'u')
-    .replace(/Ş/g, 's').replace(/Ö/g, 'o').replace(/Ç/g, 'c');
+.toast-item{
+  background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;
+  border-radius:var(--r-md);padding:10px 14px;
+  font-size:.76rem;font-weight:600;
+  display:flex;align-items:center;gap:8px;
+  box-shadow:0 4px 16px rgba(245,158,11,.35);
+  pointer-events:auto;line-height:1.35;
+  animation:toastIn .35s cubic-bezier(.22,1,.36,1) both,toastOut .35s ease 5.5s both;
 }
-
-// ─── TABLO RENDER ────────────────────────────────────────────────
-function renderTable(data) {
-  const list = document.getElementById('product-list');
-  list.innerHTML = '';
-  const frag = document.createDocumentFragment();
-
-  data.forEach((u, idx) => {
-    // Orijinal index bul
-    const origIdx = allProducts.indexOf(u);
-    const tr = document.createElement('tr');
-
-    const stokClass = u.Stok === 0 ? 'stok-kritik' : u.Stok > 10 ? 'stok-bol' : 'stok-orta';
-    const desc = u.Açıklama || '';
-
-    tr.innerHTML = `
-      <td><button class="add-btn haptic-btn" onclick="addToBasket(${origIdx})">＋</button></td>
-      <td>
-        <span class="product-name">${u.Ürün}</span>
-        ${desc ? `<span class="product-desc">${desc}</span>` : ''}
-      </td>
-      <td class="${stokClass}">${u.Stok}</td>
-      <td class="td-price">${fmt(u['Diğer Kartlar'])}</td>
-      <td class="td-price">${fmt(u['4T AWM'])}</td>
-      <td class="td-price">${fmt(u['Tek Çekim'])}</td>
-      <td class="td-price">${fmt(u.Nakit)}</td>
-      <td style="font-size:0.70rem; color:#64748b; max-width:80px;">${u.Kod}</td>
-      <td class="td-gam">${u['Ürün Gamı'] || '-'}</td>
-      <td class="td-marka">${u.Marka || '-'}</td>
-    `;
-    frag.appendChild(tr);
-  });
-
-  list.appendChild(frag);
+.toast-close{
+  margin-left:auto;flex-shrink:0;width:20px;height:20px;
+  background:rgba(0,0,0,.15);border:none;border-radius:50%;
+  color:#fff;font-size:.70rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  -webkit-tap-highlight-color:transparent;
 }
+@keyframes toastIn{from{opacity:0;transform:translateY(-16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes toastOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(-12px);max-height:0;padding:0 14px;margin:0;}}
 
-function fmt(val) {
-  if (val === undefined || val === null || val === '') return '-';
-  const n = parseFloat(val);
-  if (isNaN(n)) return val;
-  return n.toLocaleString('tr-TR') + ' ₺';
+/* STICKY HEADER */
+.sticky-header{position:fixed;top:0;left:0;right:0;z-index:100;background:var(--white);border-bottom:1px solid var(--border);box-shadow:var(--shadow-sm);}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;gap:10px;}
+.brand-area{display:flex;align-items:center;gap:10px;min-width:0;}
+.header-logo{font-weight:900;font-size:1.5rem;color:var(--primary);letter-spacing:-2px;text-transform:lowercase;line-height:1;flex-shrink:0;}
+.header-logo span{color:var(--danger);font-size:.65rem;vertical-align:super;font-weight:400;}
+#v-tag{font-family:'JetBrains Mono',monospace;font-size:.60rem;color:var(--text-3);background:var(--surface-2);border:1px solid var(--border);padding:3px 7px;border-radius:var(--r-full);white-space:nowrap;flex-shrink:0;}
+.header-right{display:flex;align-items:center;gap:7px;flex-shrink:0;}
+.cart-trigger{
+  display:flex;align-items:center;gap:5px;background:var(--primary);color:#fff;
+  padding:9px 13px;border-radius:var(--r-full);font-size:.78rem;font-weight:700;
+  cursor:pointer;white-space:nowrap;transition:all .10s ease;
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
-
-// ─── SEPET ──────────────────────────────────────────────────────
-function addToBasket(idx) {
-  const p = allProducts[idx];
-  basket.push({
-    urun: p.Ürün,
-    stok: p.Stok,
-    dk: parseFloat(p['Diğer Kartlar']) || 0,
-    awm: parseFloat(p['4T AWM']) || 0,
-    tek: parseFloat(p['Tek Çekim']) || 0,
-    nakit: parseFloat(p.Nakit) || 0,
-    aciklama: p.Açıklama || '-'
-  });
-  saveBasket();
-
-  // Buton animasyon feedback
-  const btns = document.querySelectorAll('.add-btn');
-  // Küçük pulse efekti için cart-count güncellenir yukarıda
+.cart-trigger:active{transform:scale(.91);}
+#cart-count{background:var(--accent);color:#fff;font-size:.66rem;font-weight:800;min-width:18px;height:18px;border-radius:var(--r-full);display:inline-flex;align-items:center;justify-content:center;padding:0 4px;}
+.admin-btn{
+  width:36px;height:36px;background:var(--surface-2);border:1.5px solid var(--border);
+  border-radius:var(--r-md);font-size:1rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:all .10s ease;-webkit-tap-highlight-color:transparent;
 }
-
-function saveBasket() {
-  localStorage.setItem('aygun_basket', JSON.stringify(basket));
-  updateCartUI();
+.admin-btn:active{transform:scale(.88);background:var(--warning-dim);}
+.search-container{padding:0 10px 10px;}
+#search{
+  width:100%;padding:11px 13px 11px 36px;border:1.5px solid var(--border);border-radius:var(--r-full);
+  font-family:inherit;font-size:.88rem;color:var(--text-1);
+  background:var(--surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' fill='none' stroke='%2394a3b8' stroke-width='2.2' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") no-repeat 11px center;
+  outline:none;transition:border-color .2s,box-shadow .2s;
 }
+#search:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(16,185,129,.10);background-color:var(--white);}
 
-function removeFromBasket(i) {
-  basket.splice(i, 1);
-  saveBasket();
+/* MAIN TABLE */
+main{margin-top:105px;padding:10px;}
+.table-wrapper{background:var(--white);border-radius:var(--r-lg);border:1px solid var(--border);overflow:auto;height:calc(100vh - 125px);box-shadow:var(--shadow-sm);}
+table{width:100%;border-collapse:collapse;min-width:1050px;}
+thead th{position:sticky;top:0;background:var(--primary);color:rgba(255,255,255,.82);z-index:10;padding:10px 9px;text-align:left;font-size:.65rem;font-weight:600;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;border-right:1px solid rgba(255,255,255,.06);}
+thead th:last-child{border-right:none;}
+tbody tr{border-bottom:1px solid var(--border);transition:background .10s;}
+tbody tr:hover{background:#f0fdf9;}
+tbody tr:last-child{border-bottom:none;}
+tbody td{padding:8px 9px;font-size:.80rem;color:var(--text-1);vertical-align:top;border-right:1px solid var(--surface-2);}
+tbody td:last-child{border-right:none;}
+.product-name{font-weight:600;font-size:.80rem;line-height:1.3;}
+.product-desc{font-size:.67rem;color:var(--text-2);margin-top:2px;line-height:1.35;display:block;}
+.add-btn{
+  width:30px;height:30px;background:var(--accent);color:#fff;border:none;border-radius:var(--r-sm);
+  font-size:1.05rem;font-weight:700;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(16,185,129,.28);
+  transition:all .08s cubic-bezier(.34,1.56,.64,1);
+  -webkit-tap-highlight-color:transparent;touch-action:manipulation;
 }
+.add-btn:active{transform:scale(.76);box-shadow:none;filter:brightness(.80);}
+.stok-kritik{color:var(--danger)!important;font-weight:700;}
+.stok-bol{color:var(--accent-dark)!important;font-weight:700;}
+.stok-orta{color:var(--warning)!important;font-weight:600;}
+.td-gam,.td-marka{font-size:.63rem!important;color:var(--text-2);}
+.td-price{font-family:'JetBrains Mono',monospace;font-size:.75rem;white-space:nowrap;}
 
-function clearBasket() {
-  if (confirm('Sepeti tamamen temizlemek istiyor musunuz?')) {
-    basket = [];
-    discountAmount = 0;
-    document.getElementById('discount-input').value = '';
-    saveBasket();
-  }
+/* MODAL OVERLAY */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);z-index:9000;align-items:flex-end;justify-content:center;}
+.modal-overlay.open{display:flex;}
+@keyframes slideUp{from{transform:translateY(100%);opacity:.5}to{transform:translateY(0);opacity:1}}
+@keyframes popIn{from{opacity:0;transform:scale(.88)}to{opacity:1;transform:scale(1)}}
+
+/* CART MODAL */
+.cart-modal-content{background:var(--white);width:100%;max-width:700px;height:80vh;display:flex;flex-direction:column;overflow:hidden;border-radius:20px 20px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.22);animation:slideUp .28s cubic-bezier(.22,1,.36,1) both;}
+.modal-header{padding:14px 16px 13px;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.modal-header h3{font-size:.92rem;font-weight:700;letter-spacing:-.02em;}
+.modal-badge{font-size:.68rem;background:rgba(255,255,255,.13);padding:2px 8px;border-radius:var(--r-full);font-weight:600;}
+.close-modal-btn{width:30px;height:30px;background:rgba(255,255,255,.11);color:#fff;border:none;border-radius:var(--r-sm);font-size:.80rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .08s ease;-webkit-tap-highlight-color:transparent;}
+.close-modal-btn:active{transform:scale(.82);}
+.cart-table-area{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;}
+.cart-table{width:100%;border-collapse:collapse;min-width:460px;}
+.cart-table thead th{position:sticky;top:0;background:var(--surface-2);color:var(--text-2);font-size:.62rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:8px 7px;border-bottom:2px solid var(--border);white-space:nowrap;z-index:5;}
+.cart-table tbody td{padding:7px;font-size:.77rem;border-bottom:1px solid var(--border);vertical-align:middle;}
+.cart-table tbody tr:hover{background:var(--surface);}
+.cart-price{font-family:'JetBrains Mono',monospace;font-size:.74rem;white-space:nowrap;}
+.cart-stok-0{color:var(--danger);font-weight:700;}
+.discount-row td{color:var(--danger);font-weight:700;background:#fff5f5!important;font-size:.72rem;}
+.total-row td{background:var(--primary)!important;color:#fff!important;font-weight:800;font-size:.80rem;padding:10px 7px;border-bottom:none;}
+.total-row .cart-price{color:#fff;}
+.remove-btn{width:24px;height:24px;background:var(--danger-dim);color:var(--danger);border:none;border-radius:6px;font-size:.78rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .08s ease;-webkit-tap-highlight-color:transparent;}
+.remove-btn:active{transform:scale(.76);}
+.empty-cart{padding:44px 20px;text-align:center;color:var(--text-3);font-size:.84rem;}
+.empty-cart-icon{font-size:2.2rem;display:block;margin-bottom:9px;}
+
+/* CART FOOTER (kompakt) */
+.cart-footer{flex-shrink:0;border-top:1px solid var(--border);background:var(--white);padding:11px 13px;}
+.cart-footer-row{display:flex;gap:8px;align-items:flex-end;margin-bottom:10px;}
+.footer-field{display:flex;flex-direction:column;gap:4px;}
+.footer-field label{font-size:.62rem;font-weight:700;color:var(--text-3);letter-spacing:.07em;text-transform:uppercase;}
+.footer-field input,.footer-field select,.footer-field textarea{
+  padding:9px 10px;border:1.5px solid var(--border);border-radius:var(--r-sm);
+  font-family:inherit;font-size:.82rem;color:var(--text-1);background:var(--surface);
+  outline:none;transition:border-color .15s,box-shadow .15s;width:100%;
 }
-
-function applyDiscount() {
-  discountAmount = parseFloat(document.getElementById('discount-input').value) || 0;
-  discountType = document.getElementById('discount-type').value;
-  updateCartUI();
+.footer-field textarea{resize:none;height:54px;line-height:1.4;}
+.footer-field input:focus,.footer-field select:focus,.footer-field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(16,185,129,.10);background:var(--white);}
+.final-actions{display:flex;gap:8px;}
+.btn-wa-detail{
+  flex:1;padding:13px;background:var(--surface-2);color:var(--primary);
+  border:1.5px solid var(--border);border-radius:var(--r-md);
+  font-family:inherit;font-weight:700;font-size:.82rem;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  transition:all .10s ease;-webkit-tap-highlight-color:transparent;
 }
-
-// ─── SEPET UI ────────────────────────────────────────────────────
-function updateCartUI() {
-  const countEl = document.getElementById('cart-count');
-  if (countEl) countEl.innerText = basket.length;
-
-  const tableArea = document.getElementById('cart-table-area');
-  if (!tableArea) return;
-
-  if (basket.length === 0) {
-    tableArea.innerHTML = `
-      <div class="empty-cart">
-        <span class="empty-cart-icon">🛒</span>
-        Sepetiniz boş
-      </div>`;
-    return;
-  }
-
-  const calcDisc = (total) =>
-    discountType === 'TRY' ? discountAmount : total * discountAmount / 100;
-
-  let tDK = 0, tAWM = 0, tTek = 0, tNak = 0;
-  basket.forEach(i => { tDK += i.dk; tAWM += i.awm; tTek += i.tek; tNak += i.nakit; });
-
-  let rows = '';
-  basket.forEach((item, idx) => {
-    const stokStyle = item.stok === 0 ? ' class="cart-stok-0"' : '';
-    rows += `<tr>
-      <td><span class="product-name" style="font-size:0.78rem">${item.urun}</span></td>
-      <td${stokStyle}>${item.stok}</td>
-      <td style="font-size:0.70rem; color:#64748b; max-width:100px; word-break:break-word;">${item.aciklama}</td>
-      <td class="cart-price">${fmt(item.dk)}</td>
-      <td class="cart-price">${fmt(item.awm)}</td>
-      <td class="cart-price">${fmt(item.tek)}</td>
-      <td class="cart-price">${fmt(item.nakit)}</td>
-      <td><button class="remove-btn haptic-btn" onclick="removeFromBasket(${idx})">✕</button></td>
-    </tr>`;
-  });
-
-  let discRow = '';
-  if (discountAmount > 0) {
-    const dDK = calcDisc(tDK), dAWM = calcDisc(tAWM), dTek = calcDisc(tTek), dNak = calcDisc(tNak);
-    discRow = `<tr class="discount-row">
-      <td colspan="3" style="text-align:right; font-size:0.72rem;">
-        🏷️ İndirim ${discountType === 'PERCENT' ? '%' + discountAmount : fmt(discountAmount)}
-      </td>
-      <td class="cart-price">−${fmt(dDK)}</td>
-      <td class="cart-price">−${fmt(dAWM)}</td>
-      <td class="cart-price">−${fmt(dTek)}</td>
-      <td class="cart-price">−${fmt(dNak)}</td>
-      <td></td>
-    </tr>`;
-  }
-
-  const netDK  = tDK  - calcDisc(tDK);
-  const netAWM = tAWM - calcDisc(tAWM);
-  const netTek = tTek - calcDisc(tTek);
-  const netNak = tNak - calcDisc(tNak);
-
-  const totalRow = `<tr class="total-row">
-    <td colspan="3" style="text-align:right;">NET TOPLAM</td>
-    <td class="cart-price">${fmt(netDK)}</td>
-    <td class="cart-price">${fmt(netAWM)}</td>
-    <td class="cart-price">${fmt(netTek)}</td>
-    <td class="cart-price">${fmt(netNak)}</td>
-    <td></td>
-  </tr>`;
-
-  tableArea.innerHTML = `
-    <table class="cart-table">
-      <thead>
-        <tr>
-          <th>Ürün</th>
-          <th>Stok</th>
-          <th>Açıklama</th>
-          <th>D.Kart</th>
-          <th>4T AWM</th>
-          <th>Tek Çekim</th>
-          <th>Nakit</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows}
-        ${discRow}
-        ${totalRow}
-      </tbody>
-    </table>`;
+.btn-wa-detail:active{transform:scale(.95);background:var(--blue-dim);border-color:var(--blue);color:var(--blue);}
+.btn-clear-all{
+  padding:13px 15px;background:var(--surface-2);color:var(--text-2);
+  border:1.5px solid var(--border);border-radius:var(--r-md);
+  font-family:inherit;font-weight:700;font-size:.82rem;cursor:pointer;
+  transition:all .10s ease;-webkit-tap-highlight-color:transparent;
 }
+.btn-clear-all:active{transform:scale(.92);background:var(--danger-dim);border-color:var(--danger);color:var(--danger);}
 
-// ─── SEPET TOGGLE ───────────────────────────────────────────────
-function toggleCart() {
-  const m = document.getElementById('cart-modal');
-  if (!m) return;
-  const isOpen = m.classList.contains('open');
-  if (isOpen) {
-    m.classList.remove('open');
-    m.style.display = 'none';
-  } else {
-    m.style.display = 'flex';
-    m.classList.add('open');
-    updateCartUI();
-  }
-}
+/* WA DETAIL MODAL */
+.wa-modal-content{background:var(--white);width:100%;max-width:500px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;border-radius:20px 20px 0 0;box-shadow:0 -8px 40px rgba(0,0,0,.22);animation:slideUp .28s cubic-bezier(.22,1,.36,1) both;}
+.wa-modal-body{flex:1;overflow-y:auto;padding:16px;-webkit-overflow-scrolling:touch;}
+.wa-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+.wa-grid .full{grid-column:span 2;}
+.price-type-row{display:flex;gap:6px;flex-wrap:wrap;}
+.price-type-chip{display:flex;align-items:center;gap:5px;padding:6px 12px;border:1.5px solid var(--border);border-radius:var(--r-full);font-size:.72rem;font-weight:600;cursor:pointer;transition:all .12s ease;background:var(--surface);color:var(--text-2);-webkit-tap-highlight-color:transparent;}
+.price-type-chip input{display:none;}
+.price-type-chip.checked{background:var(--primary);border-color:var(--primary);color:#fff;}
+.wa-send-btn{width:100%;padding:15px;background:linear-gradient(135deg,#25d366 0%,#128c7e 100%);color:#fff;border:none;border-radius:var(--r-md);font-family:inherit;font-weight:800;font-size:.90rem;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 16px rgba(37,211,102,.32);margin-top:14px;transition:all .10s ease;-webkit-tap-highlight-color:transparent;}
+.wa-send-btn:active{transform:scale(.95);box-shadow:none;}
 
-// ─── WHATSAPP TEKLİF ────────────────────────────────────────────
-function finalizeProposal() {
-  if (basket.length === 0) { alert('Sepet boş!'); return; }
+/* CHANGE POPUP */
+.change-modal-content{background:var(--white);width:100%;max-width:460px;max-height:78vh;border-radius:var(--r-xl);overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow-lg);margin:16px;animation:popIn .28s cubic-bezier(.22,1,.36,1) both;}
+.change-header{padding:14px 16px;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.change-header h3{font-size:.90rem;font-weight:700;}
+#change-list{flex:1;overflow-y:auto;padding:12px 16px;}
+.change-item{display:flex;align-items:flex-start;gap:9px;padding:9px 0;border-bottom:1px solid var(--border);font-size:.78rem;line-height:1.4;}
+.change-item:last-child{border-bottom:none;}
+.change-dot{width:7px;height:7px;background:var(--warning);border-radius:50%;margin-top:5px;flex-shrink:0;}
 
-  const phone = document.getElementById('cust-phone').value.trim();
-  if (!phone || phone.length !== 11 || !phone.startsWith('0')) {
-    alert('Geçerli bir telefon giriniz (0 ile başlayan 11 hane)');
-    return;
-  }
+/* ADMIN MODAL */
+.admin-modal-overlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.80);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:9100;align-items:flex-end;justify-content:center;}
+.admin-modal-overlay.open{display:flex;}
+.admin-modal-content{background:var(--surface);width:100%;max-width:720px;height:92vh;display:flex;flex-direction:column;overflow:hidden;border-radius:20px 20px 0 0;box-shadow:0 -8px 48px rgba(0,0,0,.28);animation:slideUp .28s cubic-bezier(.22,1,.36,1) both;}
+.admin-header{padding:14px 16px;background:linear-gradient(135deg,#1e293b 0%,#0f172a 100%);color:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.admin-header-info h3{font-size:.92rem;font-weight:700;}
+.admin-header-info p{font-size:.68rem;color:rgba(255,255,255,.40);margin-top:1px;}
+.admin-tabs{display:flex;gap:0;flex-shrink:0;background:var(--surface);border-bottom:1px solid var(--border);overflow-x:auto;}
+.admin-tab{padding:10px 16px;font-size:.74rem;font-weight:700;cursor:pointer;white-space:nowrap;color:var(--text-3);background:transparent;border:none;border-bottom:2px solid transparent;font-family:inherit;-webkit-tap-highlight-color:transparent;transition:all .15s;}
+.admin-tab.active{color:var(--primary);border-bottom-color:var(--accent);}
+.admin-body{flex:1;overflow-y:auto;padding:14px;-webkit-overflow-scrolling:touch;}
+.admin-tab-content{display:none;}
+.admin-tab-content.active{display:block;}
+.admin-stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px;}
+.stat-card{background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px;box-shadow:var(--shadow-sm);}
+.stat-card-icon{font-size:1.3rem;margin-bottom:5px;display:block;}
+.stat-card-val{font-size:1.55rem;font-weight:900;color:var(--primary);line-height:1;font-family:'JetBrains Mono',monospace;}
+.stat-card-lbl{font-size:.65rem;color:var(--text-3);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-top:4px;}
+.admin-section{background:var(--white);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:12px;overflow:hidden;box-shadow:var(--shadow-sm);}
+.admin-section-header{padding:10px 13px;background:var(--surface-2);border-bottom:1px solid var(--border);font-size:.70rem;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.06em;display:flex;align-items:center;gap:7px;}
+.user-row{padding:11px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.user-row:last-child{border-bottom:none;}
+.user-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#0284c7);color:#fff;font-weight:800;font-size:.78rem;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.user-info{flex:1;min-width:0;}
+.user-email{font-size:.76rem;font-weight:600;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.user-meta{font-size:.66rem;color:var(--text-3);margin-top:1px;}
+.user-badges{display:flex;gap:5px;flex-shrink:0;}
+.badge{font-size:.64rem;font-weight:700;padding:3px 8px;border-radius:var(--r-full);white-space:nowrap;}
+.badge-green{background:var(--accent-dim);color:var(--accent-dark);}
+.badge-blue{background:var(--blue-dim);color:#1d4ed8;}
+.badge-orange{background:var(--warning-dim);color:#92400e;}
+.product-row{padding:9px 13px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;}
+.product-row:last-child{border-bottom:none;}
+.product-rank{font-size:.70rem;color:var(--text-3);font-weight:700;width:18px;flex-shrink:0;}
+.product-bar-wrap{flex:1;}
+.product-bar-name{font-size:.75rem;font-weight:600;margin-bottom:4px;color:var(--text-1);}
+.product-bar-track{height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden;}
+.product-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),#0284c7);border-radius:3px;transition:width .6s ease;}
+.product-bar-count{font-size:.66rem;color:var(--text-3);flex-shrink:0;font-family:'JetBrains Mono',monospace;}
+.daily-chart{padding:12px 13px 14px;}
+.chart-bars{display:flex;align-items:flex-end;gap:5px;height:60px;}
+.chart-bar-wrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
+.chart-bar{width:100%;border-radius:4px 4px 0 0;background:linear-gradient(180deg,var(--accent),var(--accent-dark));min-height:3px;}
+.chart-bar.today{background:linear-gradient(180deg,#f59e0b,#d97706);}
+.chart-label{font-size:.58rem;color:var(--text-3);font-weight:600;}
 
-  const custName = document.getElementById('cust-name').value.trim() || '—';
-  const extraNote = document.getElementById('extra-info').value.trim();
-  const userEmail = currentUser ? currentUser.Email : '—';
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:var(--border-strong);border-radius:4px;}
 
-  // Geçerlilik tarihi: bugün + 3 gün
-  const geçerlilik = new Date();
-  geçerlilik.setDate(geçerlilik.getDate() + 3);
-  const gelDate = geçerlilik.toISOString().split('T')[0];
-
-  const calcDisc = (t) => discountType === 'TRY' ? discountAmount : t * discountAmount / 100;
-
-  let tDK = 0, tAWM = 0, tTek = 0, tNak = 0;
-  basket.forEach(i => { tDK += i.dk; tAWM += i.awm; tTek += i.tek; tNak += i.nakit; });
-
-  const netDK  = tDK  - calcDisc(tDK);
-  const netAWM = tAWM - calcDisc(tAWM);
-  const netTek = tTek - calcDisc(tTek);
-  const netNak = tNak - calcDisc(tNak);
-
-  const urunList = basket.map(i => `  • ${i.urun}`).join('\n');
-
-  let odemeLines = '';
-  if (selectedPriceTypes.includes('awm'))  odemeLines += `4T AWM: ${fmt(netAWM)}\n`;
-  if (selectedPriceTypes.includes('dk'))   odemeLines += `D. Kart: ${fmt(netDK)}\n`;
-  if (selectedPriceTypes.includes('tek'))  odemeLines += `Tek Çekim: ${fmt(netTek)}\n`;
-  if (selectedPriceTypes.includes('nakit')) odemeLines += `Nakit: ${fmt(netNak)}\n`;
-
-  if (!odemeLines) odemeLines = `D. Kart: ${fmt(netDK)}\n`;
-
-  const discountNote = discountAmount > 0
-    ? `( ${discountType === 'PERCENT' ? '%' + discountAmount : fmt(discountAmount)} indirim uygulanmıştır )\n`
-    : '';
-
-  const noteSection = extraNote ? `\nNot: ${extraNote}` : '';
-
-  const msg =
-    `*aygün® TEKLİF*\n` +
-    `━━━━━━━━━━━━━━━\n` +
-    `Müşteri: ${custName}\n` +
-    `Teklif veren: ${userEmail}\n` +
-    `Telefon: ${phone}\n` +
-    `Geçerlilik: ${gelDate}\n\n` +
-    `*Ürünler:*\n${urunList}\n\n` +
-    `*Ödeme Seçenekleri:*\n${odemeLines}` +
-    `${discountNote}` +
-    `${noteSection}\n` +
-    `> Satış beklenmektedir.`;
-
-  // WhatsApp numarası: 0 yerine 90 ile başla
-  const waPhone = '9' + phone; // 0532... → 90532...
-  const waUrl = `https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`;
-  window.open(waUrl, '_blank');
-}
-
-// ─── DEĞİŞİKLİK KONTROLÜ ────────────────────────────────────────
-function checkChanges(json) {
-  const storageKey = 'last_json_' + (currentUser ? currentUser.Email : 'guest');
-  const last = JSON.parse(localStorage.getItem(storageKey)) || {};
-  const changes = [];
-
-  if (last.data && Array.isArray(json.data)) {
-    json.data.forEach(p => {
-      const old = last.data.find(x => x.Kod === p.Kod);
-      if (!old) return;
-
-      const fields = ['Nakit', 'Tek Çekim', '4T AWM', 'Diğer Kartlar', 'Stok', 'Açıklama'];
-      fields.forEach(f => {
-        if (old[f] !== p[f]) {
-          let note = '';
-          if (f === 'Stok') {
-            const diff = p[f] - old[f];
-            note = `Stok ${diff > 0 ? diff + ' arttı' : Math.abs(diff) + ' azaldı'} (${old[f]} → ${p[f]})`;
-          } else if (f === 'Açıklama') {
-            note = `Açıklama güncellendi`;
-          } else {
-            const diff = parseFloat(p[f]) - parseFloat(old[f]);
-            note = `${f} ${diff > 0 ? '+' + diff + ' arttı' : Math.abs(diff) + ' ₺ azaldı'} (${old[f]} → ${p[f]})`;
-          }
-          changes.push(`${p.Ürün}: ${note}`);
-        }
-      });
-    });
-  }
-
-  // Eski kayıtları sil, yeni versiyonu kaydet
-  localStorage.setItem(storageKey, JSON.stringify(json));
-
-  if (changes.length === 0) return;
-
-  // Birikmiş popup sayısını kontrol et (max 2)
-  const seenKey = 'seen_versions_' + (currentUser ? currentUser.Email : 'guest');
-  const seenVersions = JSON.parse(localStorage.getItem(seenKey)) || [];
-
-  const vKey = json.metadata ? json.metadata.v : 'unknown';
-  if (seenVersions.includes(vKey)) return; // Bu versiyonu zaten gördü
-
-  // Max 2 versiyon tut
-  seenVersions.push(vKey);
-  if (seenVersions.length > 2) seenVersions.shift();
-  localStorage.setItem(seenKey, JSON.stringify(seenVersions));
-
-  // Popup göster
-  const listEl = document.getElementById('change-list');
-  listEl.innerHTML = changes.map(c =>
-    `<div class="change-item"><span class="change-dot"></span><span>${c}</span></div>`
-  ).join('');
-
-  const popup = document.getElementById('change-popup');
-  popup.style.display = 'flex';
-  popup.classList.add('open');
-}
-
-function closeChangePopup() {
-  const popup = document.getElementById('change-popup');
-  popup.style.display = 'none';
-  popup.classList.remove('open');
+@media(max-width:480px){
+  .login-box{padding:30px 22px;}
+  .brand-logo{font-size:2.5rem;}
+  header{padding:8px 10px;}
+  main{margin-top:98px;padding:8px;}
+  .admin-stats-grid{grid-template-columns:1fr 1fr;}
+  .wa-grid{grid-template-columns:1fr;}
+  .wa-grid .full{grid-column:span 1;}
 }
