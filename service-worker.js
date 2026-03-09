@@ -1,4 +1,4 @@
-const CACHE_NAME = "aygun-v3-cache";
+const CACHE_NAME = "aygun-v4-cache";
 const assets = [
   "./",
   "./index.html",
