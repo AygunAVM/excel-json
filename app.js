@@ -5,7 +5,7 @@
 
 // ─── FİREBASE BAŞLATMA ──────────────────────────────────────────
 import { initializeApp }                           from 'https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js';
-import { getFirestore, collection, doc,
+import { getFirestore, collection, doc, deleteDoc,
          addDoc, setDoc, updateDoc, onSnapshot,
          query, orderBy, serverTimestamp,
          getDoc }                                  from 'https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js';
@@ -62,8 +62,14 @@ function startFirebaseListeners() {
       updateProposalBadge();
       // Açık modalları yenile
       if(document.getElementById('proposals-modal')?.classList.contains('open')) renderProposals();
-      const adminList = document.getElementById('admin-proposals-list');
-      if(adminList && document.getElementById('admin-modal')?.classList.contains('open')) renderProposals(adminList, true);
+      // Admin paneli açıksa ilgili sekmeleri güncelle
+      const adminOpen = document.getElementById('admin-modal')?.classList.contains('open');
+      if(adminOpen) {
+        const activeTab = document.querySelector('.admin-tab.active')?.dataset?.tab;
+        if(activeTab === 'overview') { renderSepetDurum(); }
+        if(activeTab === 'sepetler') { renderSepetDetay(); }
+        if(activeTab === 'personel') { renderAdminUsers(); }
+      }
     },
     err => console.error('proposals listener:', err)
   );
@@ -215,12 +221,14 @@ function isAdmin() {
 // ─── VERİ YÜKLE ─────────────────────────────────────────────────
 async function loadData() {
   const urunUrl = dataUrl('urunler.json')+'?v='+Date.now();
+  // Global cache — admin stok uyarısı ve uyuyan stok için
   console.log('[loadData] Fetching:', urunUrl);
   try {
     const resp = await fetch(urunUrl);
     if(!resp.ok) throw new Error('HTTP '+resp.status+' — '+urunUrl);
     const json = safeJSON(await resp.text());
     allProducts = Array.isArray(json.data)?json.data:(Array.isArray(json)?json:[]);
+    window._cachedUrunler = allProducts; // admin stok için
     if (json.metadata?.v) currentVersion=json.metadata.v;
     const vt=document.getElementById('v-tag'); if(vt) vt.innerText=currentVersion;
     checkChanges(json);
@@ -624,14 +632,21 @@ function openAbakusAction(mode) {
     }
 
     // Moda göre başlık, alanlar, buton
+    const sureField = document.getElementById('sure-field');
     if(mode==='wa') {
       if(title) title.textContent='📲 WhatsApp Teklif';
       if(saleFields) saleFields.style.display='none';
+      if(sureField) sureField.style.display='block';
+      const gizlilikFldWa = document.getElementById('gizlilik-field');
+      if(gizlilikFldWa) gizlilikFldWa.style.display='block';
       if(sendBtn) sendBtn.innerHTML='📲 WhatsApp\'ta Gönder';
       if(phoneLabel) phoneLabel.textContent='(WhatsApp için zorunlu)';
     } else if(mode==='teklif') {
       if(title) title.textContent='📋 Teklif Oluştur';
       if(saleFields) saleFields.style.display='none';
+      if(sureField) sureField.style.display='block';
+      const gizlilikFld2 = document.getElementById('gizlilik-field');
+      if(gizlilikFld2) gizlilikFld2.style.display='block';
       if(sendBtn) sendBtn.innerHTML='📋 Teklifi Kaydet';
       if(phoneLabel) phoneLabel.textContent='(opsiyonel)';
     } else if(mode==='satis') {
@@ -663,7 +678,7 @@ function closeWaModal() {
 }
 
 function _clearAksiyonForm() {
-  ['cust-name','cust-phone','cust-phone2','extra-info','cust-tc','cust-email','cust-address','cust-sale-method']
+  ['cust-name','cust-phone','cust-phone2','extra-info','cust-tc','cust-email','cust-address','cust-sale-method','teklif-sure-bitis']
     .forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
 }
 
@@ -699,7 +714,10 @@ function finalizeAksiyon() {
     const dn=discountAmount>0?'( '+(discountType==='PERCENT'?'%'+discountAmount:fmt(discountAmount))+' indirim )\n':'';
     const msg='*aygün\u00ae TEKLİF*\n---\nMüşteri: '+custName+'\nTeklif veren: '+(currentUser?.Email||'-')+'\nTelefon: '+phone+'\nGeçerlilik: '+expDate+'\n\n*Ürünler:*\n'+urunList+'\n\n*Ödeme:*\n'+od+'\n'+dn+(extraNote?'\nNot: '+extraNote:'')+'\n> Satış beklenmektedir.';
     window.open('https://wa.me/9'+phone+'?text='+encodeURIComponent(msg),'_blank');
-    _kaydetTeklif(custName, phone, odText, tahsilat, extraNote);
+    const sureBitisElWa = document.getElementById('teklif-sure-bitis');
+    const sureBitisWa = sureBitisElWa?.value ? new Date(sureBitisElWa.value).toISOString() : null;
+    const gizlilikElWa = document.querySelector('input[name="teklif-gizlilik"]:checked');
+    _kaydetTeklif(custName, phone, odText, tahsilat, extraNote, sureBitisWa, gizlilikElWa?.value||'acik');
     closeWaModal(); _clearAksiyonForm(); abakusSelection=null;
     return;
   }
@@ -707,7 +725,11 @@ function finalizeAksiyon() {
   // ── TEKLİF MODU ──────────────────────────────────────────────
   if(_aksiyonMode === 'teklif') {
     if(!custName || custName==='-') { alert('Müşteri adı giriniz.'); haptic(80); return; }
-    _kaydetTeklif(custName, phone||'—', odText, tahsilat, extraNote);
+    const sureBitisEl = document.getElementById('teklif-sure-bitis');
+    const sureBitis = sureBitisEl?.value ? new Date(sureBitisEl.value).toISOString() : null;
+    const gizlilikEl = document.querySelector('input[name="teklif-gizlilik"]:checked');
+    const gizlilik = gizlilikEl?.value || 'acik';
+    _kaydetTeklif(custName, phone||'—', odText, tahsilat, extraNote, sureBitis, gizlilik);
     closeWaModal(); _clearAksiyonForm(); abakusSelection=null;
     return;
   }
@@ -786,13 +808,15 @@ function finalizeAksiyon() {
   }
 }
 
-function _kaydetTeklif(custName, phone, odText, tahsilat, extraNote) {
+function _kaydetTeklif(custName, phone, odText, tahsilat, extraNote, sureBitis, gizlilik) {
   const prop = {
     id:uid(), ts:new Date().toISOString(),
     custName, phone, urunler:basket.map(i=>({...i})),
     odeme:odText, nakit:tahsilat, indirim:discountAmount, indirimTip:discountType,
     abakus: abakusSelection ? {...abakusSelection} : null,
-    user:currentUser?.Email||'-', durum:'bekliyor', not:extraNote, tip:'teklif'
+    user:currentUser?.Email||'-', durum:'bekliyor', not:extraNote, tip:'teklif',
+    sureBitis: sureBitis || null,
+    gizlilik: gizlilik || 'acik'
   };
   proposals.unshift(prop);
   localStorage.setItem('aygun_proposals', JSON.stringify(proposals));
@@ -806,15 +830,17 @@ function _kaydetTeklif(custName, phone, odText, tahsilat, extraNote) {
 function finalizeProposal() { finalizeAksiyon(); }
 
 // ─── TEKLİFLER ──────────────────────────────────────────────────
-let currentPropFilter = 'all'; // all | bekliyor | onaylandi | iptal
+let currentPropFilter = 'all'; // all | bekliyor | satisDondu | iptal | sureDoldu
 
 function openProposals() {
+  // Her açılışta Firestore&#39;dan tazele (gizlilik filtresinin güncel çalışması için)
+  renderProposals();
   haptic(16);
   const m=document.getElementById('proposals-modal'); if(!m) return;
   m.style.display='flex'; m.classList.add('open');
   currentPropFilter = 'all';
   // Reset filter buttons
-  document.querySelectorAll('.prop-filter-btn').forEach(b=>b.classList.toggle('active', b.dataset.filter==='all'));
+  document.querySelectorAll('.pseg-btn').forEach(b=>b.classList.toggle('active', b.dataset.filter==='all'));
   renderProposals();
 }
 function closeProposals() {
@@ -824,17 +850,21 @@ function closeProposals() {
 function filterProposals(filter) {
   haptic(12);
   currentPropFilter = filter;
-  document.querySelectorAll('.prop-filter-btn').forEach(b=>b.classList.toggle('active', b.dataset.filter===filter));
+  document.querySelectorAll('.pseg-btn').forEach(b=>b.classList.toggle('active', b.dataset.filter===filter));
   renderProposals();
 }
 function renderProposals(container, forceAll) {
   const target = container || document.getElementById('proposals-body');
   if(!target) return;
 
-  // Admin tüm teklifleri görür; satis kullanıcısı sadece kendininkini
+  // Admin tüm teklifleri görür; satis: kendi + herkese açık
   let myProps = isAdmin()
     ? proposals
-    : proposals.filter(p => p.user === (currentUser?.Email||''));
+    : proposals.filter(p =>
+        p.user === (currentUser?.Email||'') ||
+        p.gizlilik === 'acik' ||
+        !p.gizlilik   // eski teklifler gizlilik alanı olmayabilir → açık say
+      );
 
   // Filtre uygula (sadece modal görünümde, admin listesi değil)
   if(!forceAll && currentPropFilter !== 'all') {
@@ -842,7 +872,10 @@ function renderProposals(container, forceAll) {
   }
 
   const badge=document.getElementById('prop-modal-count');
-  if(badge) badge.textContent = myProps.length + ' teklif';
+  if(badge) {
+    const bek = myProps.filter(p=>p.durum==='bekliyor'||p.durum==='sureDoldu').length;
+    badge.textContent = myProps.length + ' teklif' + (bek>0 ? ' · ' + bek + ' bekliyor' : '');
+  }
   const propBadge=document.getElementById('prop-badge');
   if(propBadge) {
     const allProps = isAdmin() ? proposals : proposals.filter(p=>p.user===(currentUser?.Email||''));
@@ -855,27 +888,52 @@ function renderProposals(container, forceAll) {
     target.innerHTML = '<div class="empty-cart" style="height:160px;"><span class="empty-cart-icon">📋</span>Teklif yok</div>';
     return;
   }
-  const statusMap = {bekliyor:'Bekliyor', onaylandi:'Onaylandı', iptal:'İptal'};
-  const statusCls = {bekliyor:'status-bekliyor', onaylandi:'status-onaylandi', iptal:'status-iptal'};
+  const statusMap = {bekliyor:'⏳ Bekliyor', satisDondu:'✅ Satışa Döndü', iptal:'✕ İptal', sureDoldu:'⌛ Süresi Doldu'};
+  const statusCls = {bekliyor:'status-bekliyor', satisDondu:'status-satis-dondu', iptal:'status-iptal', sureDoldu:'status-sure-doldu'};
 
   target.innerHTML = myProps.map(p => {
-    const canAct = isAdmin() || p.user===(currentUser?.Email||'');
-    const waBtn = `<button class="btn-wa-resend haptic-btn" onclick="resendProposalWa('${p.id}')" title="WhatsApp ile tekrar gönder">📲 WA</button>`;
-    const noteBtn = isAdmin() ? `<button class="btn-add-note haptic-btn" onclick="openPropNote('${p.id}')" title="Admin notu ekle">📝 Not</button>` : '';
-    const actBtns = canAct && p.durum==='bekliyor'
-      ? `<div class="proposal-actions">
-          <button class="btn-approve" onclick="updatePropStatus('${p.id}','onaylandi')">✓ Onayla</button>
-          <button class="btn-cancel"  onclick="updatePropStatus('${p.id}','iptal')">✕ İptal</button>
-          ${waBtn}${noteBtn}
-         </div>`
-      : canAct
-        ? `<div class="proposal-actions"><span class="prop-closed-label">${p.durum==='onaylandi'?'✓ Onaylandı':'✕ İptal edildi'}</span>${waBtn}${noteBtn}</div>`
-        : '';
-    const userTag = isAdmin() ? `<span class="proposal-tag prop-user-tag">👤 ${p.user}</span>` : '';
+    const me = currentUser?.Email||'';
+    const canAct = isAdmin() || p.user===me;
+    const propDate = p.ts ? p.ts.split('T')[0] : '';
+    const todayStr = new Date().toISOString().split('T')[0];
+    const salesCanEdit = propDate === todayStr;
+    const canEdit = isAdmin() || (p.user===me && salesCanEdit);
+
+    // Süre kontrolü
+    const now = new Date();
+    const expDate = p.sureBitis ? new Date(p.sureBitis) : null;
+    if(expDate && now > expDate && p.durum==='bekliyor') p.durum='sureDoldu';
+
+    const isActive = p.durum==='bekliyor'||p.durum==='sureDoldu';
+
+    // Not göstergesi
+    const noteCount = (p.adminNot||[]).length;
+    const noteDot = noteCount ? `<span class="note-dot">${noteCount}</span>` : '';
+
+    // Buton grubu — ikon tabanlı pill tasarım
+    const btns = [];
+    if(canAct && isActive) {
+      btns.push(`<button class="pact-btn pact-green haptic-btn" onclick="updatePropStatus('${p.id}','satisDondu')" title="Satışa Döndü"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 8l4 4 8-7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> Satış</button>`);
+      btns.push(`<button class="pact-btn pact-red haptic-btn" onclick="updatePropStatus('${p.id}','iptal')" title="İptal Et"><svg width="11" height="11" viewBox="0 0 16 16" fill="none"><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg> İptal</button>`);
+    }
+    if(p.phone && p.phone!=='—') {
+      btns.push(`<button class="pact-btn pact-wa haptic-btn" onclick="resendProposalWa('${p.id}')" title="WhatsApp"><svg width="13" height="13" viewBox="0 0 32 32" fill="currentColor"><path d="M16 2C8.27 2 2 8.27 2 16c0 2.44.65 4.72 1.78 6.7L2 30l7.53-1.74A13.94 13.94 0 0016 30c7.73 0 14-6.27 14-14S23.73 2 16 2zm0 25.5a11.44 11.44 0 01-5.86-1.6l-.42-.25-4.47 1.03 1.06-4.34-.27-.44A11.5 11.5 0 1116 27.5zm6.3-8.6c-.34-.17-2.02-.99-2.33-1.1-.31-.12-.54-.17-.76.17-.23.34-.88 1.1-1.08 1.33-.2.23-.4.25-.74.08-.34-.17-1.43-.52-2.73-1.66-1.01-.9-1.69-2-1.89-2.34-.2-.34-.02-.52.15-.69.15-.15.34-.4.51-.6.17-.2.23-.34.34-.57.12-.23.06-.43-.03-.6-.08-.17-.76-1.83-1.04-2.5-.27-.65-.55-.56-.76-.57h-.65c-.22 0-.57.08-.87.4s-1.14 1.11-1.14 2.7 1.17 3.13 1.33 3.35c.17.22 2.3 3.5 5.57 4.77.78.34 1.39.54 1.86.69.78.25 1.49.21 2.05.13.63-.09 1.93-.79 2.2-1.55.28-.76.28-1.41.2-1.55-.09-.13-.32-.2-.65-.36z"/></svg></button>`);
+    }
+    if(canEdit) {
+      // Herkes not ekleyebilir (kendi notu olarak kaydedilir)
+      if(true) btns.push(`<button class="pact-btn pact-note haptic-btn" onclick="openPropNote('${p.id}')" title="Not Ekle"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 12V14h2l7.5-7.5-2-2L2 12zm12.7-7.3a1 1 0 000-1.4l-1-1a1 1 0 00-1.4 0L11 3.6l2.4 2.4 1.3-1.3z" fill="currentColor"/></svg>${noteDot}</button>`);
+      if(isAdmin()) btns.push(`<button class="pact-btn pact-edit haptic-btn" onclick="openEditProp('${p.id}')" title="Düzenle"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="1" y="11" width="14" height="1.5" rx=".75" fill="currentColor"/><path d="M10.5 2.5l2 2-7 7-2.5.5.5-2.5 7-7z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg></button>`);
+      if(isAdmin()) btns.push(`<button class="pact-btn pact-del haptic-btn" onclick="deleteProp('${p.id}')" title="Sil"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 4h10M6 4V2h4v2M5 4l.5 9h5L11 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`);
+    }
+
+    const userTag = `<span class="proposal-tag prop-user-tag" style="${p.user===me?'background:#dcfce7;color:#15803d':''}">👤 ${p.user.split('@')[0]}</span>`;
+    const gizliTag = p.gizlilik==='kapali' ? `<span class="proposal-tag" style="background:#f3e8ff;color:#7c3aed">🔒</span>` : '';
+    const sureTag = p.sureBitis ? `<span class="proposal-tag" style="background:#fff7ed;color:#c2410c">⏰ ${new Date(p.sureBitis).toLocaleDateString('tr-TR')}</span>` : '';
     const adminNotes = (p.adminNot||[]).length
-      ? `<div class="prop-admin-notes">${(p.adminNot||[]).map(n=>`<div class="prop-admin-note"><span class="prop-note-who">🔒 ${n.who}</span><span class="prop-note-text">${n.text}</span><span class="prop-note-time">${fmtDate(n.ts)}</span></div>`).join('')}</div>`
+      ? `<div class="prop-admin-notes">${(p.adminNot||[]).map(n=>`<div class="prop-admin-note"><span class="prop-note-who">${n.who.split('@')[0]}</span><span class="prop-note-text">${n.text}</span><span class="prop-note-time">${fmtDate(n.ts)}</span></div>`).join('')}</div>`
       : '';
-    return `<div class="proposal-card" id="pcard-${p.id}">
+
+    return `<div class="proposal-card status-card-${p.durum||'bekliyor'}" id="pcard-${p.id}">
       <div class="proposal-card-header">
         <span class="proposal-status ${statusCls[p.durum]||'status-bekliyor'}">${statusMap[p.durum]||p.durum}</span>
         <span class="proposal-name">${p.custName}</span>
@@ -884,14 +942,14 @@ function renderProposals(container, forceAll) {
       <div class="proposal-body">
         <div class="proposal-row">
           <span class="proposal-tag">📞 ${p.phone}</span>
-          <span class="proposal-tag">💳 ${p.odeme}</span>
-          ${userTag}
-          ${p.not?`<span class="proposal-tag">📝 ${p.not}</span>`:''}
+          <span class="proposal-tag">💳 ${p.odeme||'—'}</span>
+          ${userTag}${gizliTag}${sureTag}
+          ${p.not?`<span class="proposal-tag prop-note-inline">💬 ${p.not}</span>`:''}
         </div>
         <div class="proposal-products">${(p.urunler||[]).map(u=>`• ${u.urun}`).join('<br>')}</div>
         ${adminNotes}
       </div>
-      ${actBtns}
+      ${btns.length ? `<div class="proposal-action-bar">${btns.join('')}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -904,13 +962,29 @@ function updatePropStatus(id, durum) {
   renderProposals();
   const adminList=document.getElementById('admin-proposals-list');
   if(adminList) renderProposals(adminList, true);
-  // Firebase güncelle
   fbUpdateProp(proposals[idx].id, { durum });
+}
+
+async function deleteProp(id) {
+  if(!isAdmin()) return;
+  if(!confirm('Bu teklif kalıcı olarak silinsin mi?')) return;
+  haptic(30);
+  const idx = proposals.findIndex(p=>p.id===id);
+  if(idx===-1) return;
+  proposals.splice(idx, 1);
+  localStorage.setItem('aygun_proposals', JSON.stringify(proposals));
+  renderProposals();
+  const adminList=document.getElementById('admin-proposals-list');
+  if(adminList) renderProposals(adminList, true);
+  // Firestore&#39;dan kalıcı sil
+  try {
+    await deleteDoc(doc(_db, 'proposals', id));
+  } catch(e) { console.warn('FB delete:', e); }
+  updateProposalBadge();
 }
 
 // ─── TEKLİFE NOT EKLE (sadece admin) ────────────────────────────
 function openPropNote(id) {
-  if(!isAdmin()) return;
   haptic(14);
   const p = proposals.find(pr=>pr.id===id); if(!p) return;
   const existingNotes = (p.adminNot||[]).map(n=>
@@ -933,8 +1007,6 @@ function openPropNote(id) {
   if(adminList) renderProposals(adminList, true);
   // Firebase güncelle
   fbUpdateProp(proposals[idx].id, { adminNot: proposals[idx].adminNot });
-  const ct=document.getElementById('change-toast');
-  if(ct){ ct.textContent='✓ Not eklendi'; ct.classList.add('show'); setTimeout(()=>ct.classList.remove('show'),2000); }
 }
 
 function resendProposalWa(id) {
@@ -1224,7 +1296,7 @@ async function renderAdminPanel() {
     Object.values(byUser).forEach(rec => { tL+=rec.logins||0; });
   });
 
-  const pendingProps = proposals.filter(p=>p.durum==='bekliyor').length;
+  const pendingProps = proposals.filter(p=>p.durum==='bekliyor'||p.durum==='sureDoldu').length;
 
   // Bugünkü login sayısı
   const todayData=data[today]||{};
@@ -1236,6 +1308,13 @@ async function renderAdminPanel() {
   document.getElementById('stat-logins').innerHTML    = `${tL}<span class="stat-today">+${todayLogins} bugün</span>`;
   document.getElementById('stat-proposals').innerHTML = `${proposals.length}<span class="stat-today">${pendingProps} bekliyor</span>`;
   document.getElementById('stat-sales').innerHTML     = `${sales.length}<span class="stat-today">${sales.filter(s=>s.ts&&s.ts.startsWith(today)).length} bugün</span>`;
+  // Kart tıklama navigasyonu
+  const scProp = document.getElementById('stat-card-proposals');
+  if(scProp) scProp.onclick = () => { closeAdmin(); openProposals(); };
+  const scSales = document.getElementById('stat-card-sales');
+  if(scSales) scSales.onclick = () => switchAdminTab('sales');
+  const scUsers = document.getElementById('stat-card-users');
+  if(scUsers) scUsers.onclick = () => switchAdminTab('personel');
   document.getElementById('stat-users').innerHTML     = `${allUsers.size}<span class="stat-today">${todayActive} aktif</span>`;
 
   // Kullanıcı başına teklif/satış sayısı özeti (proposals/sales'dan)
@@ -1250,40 +1329,157 @@ async function renderAdminPanel() {
   if(dcEl) dcEl.innerHTML=dc.map(d=>
     `<div class="chart-bar-wrap"><div class="chart-bar ${d.date===today?'today':''}" style="height:${Math.max(4,Math.round(d.c/md*100))}%"><span class="chart-bar-val">${d.c||''}</span></div><span class="chart-label">${d.date.slice(5)}</span></div>`
   ).join('');
+
+  // Kritik stok uyarısı
+  renderStokUyari();
+  // Kullanıcı sepet durumu
+  renderSepetDurum();
+  // Personel bugün
+  renderPersonelBugun(data, today);
+}
+
+function renderStokUyari() {
+  const el = document.getElementById('admin-stok-uyari');
+  if(!el) return;
+  // rawProducts zaten yüklü (uygulama başlarken loadData() çalışır)
+  if(allProducts && allProducts.length) {
+    window._cachedUrunler = allProducts;
+    _doStokUyari(el, allProducts); return;
+  }
+  if(window._cachedUrunler && window._cachedUrunler.length) {
+    _doStokUyari(el, window._cachedUrunler); return;
+  }
+  el.innerHTML='<div class="admin-empty">Yükleniyor...</div>';
+  fetch(dataUrl('urunler.json')+'?t='+Date.now())
+    .then(r=>{ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(json=>{
+      const rows = Array.isArray(json.data)?json.data:(Array.isArray(json)?json:[]);
+      window._cachedUrunler = rows;
+      _doStokUyari(el, rows);
+    })
+    .catch(err=>{ el.innerHTML='<div class="admin-empty" style="color:#dc2626">⚠️ Yüklenemedi: '+err.message+'</div>'; });
+}
+
+function _getUrunAdi(r) {
+  const k = Object.keys(r).find(k=>{
+    const n=k.toLowerCase().replace(/\s/g,'');
+    return n==='ürün'||n==='urun'||n==='urunadi'||n==='ürünadi'||n==='product'||n==='name';
+  });
+  return k ? r[k] : (r.urun||r['Ürün']||r.Urun||Object.values(r)[0]||'?');
+}
+function _getStok(r) {
+  const k = Object.keys(r).find(k=>k.toLowerCase().replace(/\s/g,'').includes('stok')||k.toLowerCase()==='stock');
+  return k ? Number(r[k])||0 : Number(r.Stok||r.stok||0);
+}
+function _doStokUyari(el, rows) {
+  const stokSifir  = rows.filter(r => _getStok(r)===0);
+  const stokKritik = rows.filter(r => { const s=_getStok(r); return s>=1&&s<=3; });
+  if(!stokSifir.length && !stokKritik.length) {
+    el.innerHTML='<div class="stok-ok">✅ Tüm ürünlerde stok normal</div>'; return;
+  }
+  const html = [
+    ...stokSifir.map(r=>`<div class="stok-alert stok-0"><span class="stok-dot red"></span><span class="stok-urun">${_getUrunAdi(r)}</span><span class="stok-badge s0">Stok Yok</span></div>`),
+    ...stokKritik.map(r=>`<div class="stok-alert stok-kritik"><span class="stok-dot orange"></span><span class="stok-urun">${_getUrunAdi(r)}</span><span class="stok-badge sk">${_getStok(r)} adet</span></div>`)
+  ].join('');
+  el.innerHTML = html;
+}
+
+function renderSepetDurum() {
+  const el = document.getElementById('admin-sepet-durum');
+  if(!el) return;
+  // Firestore&#39;dan tüm aktif sepetleri oku (baskets koleksiyonu yoksa proposals'dan bekliyor olanları göster)
+  const bekleyenProps = proposals.filter(p=>p.durum==='bekliyor'||p.durum==='sureDoldu');
+  const byUser = {};
+  bekleyenProps.forEach(p=>{
+    if(!byUser[p.user]) byUser[p.user]={count:0,urunler:[]};
+    byUser[p.user].count++;
+    (p.urunler||[]).forEach(u=>byUser[p.user].urunler.push(u.urun||'?'));
+  });
+  const entries = Object.entries(byUser);
+  if(!entries.length){ el.innerHTML='<div class="admin-empty">Bekleyen teklif yok — veriler Firestore&#39;dan geliyor</div>'; return; }
+  el.innerHTML = entries.map(([user,d])=>`
+    <div class="sepet-row">
+      <div class="user-avatar" style="width:30px;height:30px;font-size:.7rem">${user.split('@')[0].slice(0,2).toUpperCase()}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:.8rem">${user.split('@')[0]}</div>
+        <div style="font-size:.72rem;color:var(--text-2)">${d.urunler.slice(0,3).join(', ')}${d.urunler.length>3?' +'+( d.urunler.length-3)+' daha':''}</div>
+      </div>
+      <span class="stok-badge sk" style="background:#dbeafe;color:#1e40af">${d.count} teklif</span>
+    </div>`).join('');
+}
+
+function renderPersonelBugun(data, today) {
+  const el = document.getElementById('admin-personel-bugun');
+  if(!el) return;
+  const todayData = data[today]||{};
+  if(!Object.keys(todayData).length){ el.innerHTML='<div class="admin-empty">Bugün giriş yok</div>'; return; }
+  el.innerHTML = `<div class="admin-section-header" style="margin-bottom:8px">🌅 Bugünkü Girişler</div>` +
+    Object.entries(todayData).map(([email,rec])=>`
+      <div class="sepet-row">
+        <div class="user-avatar" style="width:30px;height:30px;font-size:.7rem">${email.split('@')[0].slice(0,2).toUpperCase()}</div>
+        <div style="flex:1"><div style="font-weight:600;font-size:.8rem">${email.split('@')[0]}</div></div>
+        <span class="stok-badge sk" style="background:#f0fdf4;color:#15803d">${rec.logins||0} giriş</span>
+        <span class="stok-badge sk" style="background:#eff6ff;color:#1d4ed8">${rec.proposals||0} teklif</span>
+      </div>`).join('');
 }
 
 function renderAdminUsers() {
-  const data=JSON.parse(localStorage.getItem('analytics_local')||'{}');
-  const us={};
-  Object.entries(data).forEach(([date,byUser])=>{
+  // Firestore verilerinden (proposals + sales) personel istatistiği oluştur
+  const us = {};
+  proposals.forEach(p => {
+    const u = p.user||'-'; if(!u||u==='-') return;
+    if(!us[u]) us[u]={proposals:0, sales:0, lastSeen:''};
+    us[u].proposals++;
+    const d = p.ts?p.ts.split('T')[0]:'';
+    if(d > us[u].lastSeen) us[u].lastSeen = d;
+  });
+  sales.forEach(s => {
+    const u = s.user||'-'; if(!u||u==='-') return;
+    if(!us[u]) us[u]={proposals:0, sales:0, lastSeen:''};
+    us[u].sales++;
+    const d = s.ts?s.ts.split('T')[0]:'';
+    if(d > us[u].lastSeen) us[u].lastSeen = d;
+  });
+  // Analytics'ten login bilgisi de ekle (varsa)
+  const analData = JSON.parse(localStorage.getItem('analytics_local')||'{}');
+  Object.entries(analData).forEach(([date,byUser])=>{
     Object.entries(byUser).forEach(([email,rec])=>{
-      if(!us[email]) us[email]={logins:0,proposals:0,sales:0,adds:0,lastSeen:''};
-      us[email].logins+=rec.logins||0; us[email].proposals+=rec.proposals||0;
-      us[email].sales+=rec.sales||0; us[email].adds+=rec.basketAdds||0;
+      if(!us[email]) us[email]={proposals:0,sales:0,lastSeen:''};
+      if(!us[email].logins) us[email].logins=0;
+      us[email].logins+=rec.logins||0;
       if(date>us[email].lastSeen) us[email].lastSeen=date;
     });
   });
-  const su=Object.entries(us).sort((a,b)=>b[1].logins-a[1].logins);
-  const el=document.getElementById('admin-user-list');
+  const su = Object.entries(us).sort((a,b)=>(b[1].proposals+b[1].sales)-(a[1].proposals+a[1].sales));
+  const el = document.getElementById('admin-user-list');
   if(!el) return;
-  el.innerHTML=su.map(([email,s])=>{
-    const ini=email.split('@')[0].slice(0,2).toUpperCase();
+  if(!su.length) { el.innerHTML='<div class="admin-empty">Firestore&#39;dan veri bekleniyor</div>'; return; }
+  el.innerHTML = su.map(([email,s])=>{
+    const ini = email.split('@')[0].slice(0,2).toUpperCase();
+    const pending = proposals.filter(p=>p.user===email&&p.durum==='bekliyor').length;
     return `<div class="user-row">
       <div class="user-avatar">${ini}</div>
-      <div class="user-info"><div class="user-email">${email}</div><div class="user-meta">Son: ${s.lastSeen||'-'}</div></div>
+      <div class="user-info">
+        <div class="user-email">${email.split('@')[0]}</div>
+        <div class="user-meta">Son: ${s.lastSeen||'-'}</div>
+      </div>
       <div class="user-badges">
-        <span class="badge badge-green" title="Giriş">${s.logins}G</span>
+        ${s.logins?`<span class="badge badge-green" title="Giriş">${s.logins}G</span>`:''}
         <span class="badge badge-blue" title="Teklif">${s.proposals}T</span>
         <span class="badge badge-orange" title="Satış">${s.sales}S</span>
+        ${pending?`<span class="badge" style="background:#fef3c7;color:#92400e" title="Bekleyen">${pending}⏳</span>`:''}
       </div>
     </div>`;
-  }).join('')||'<div class="admin-empty">Veri yok</div>';
+  }).join('');
 }
 
 function renderAdminProducts() {
   const data=JSON.parse(localStorage.getItem('analytics_local')||'{}');
   const pm={};
+  // localStorage analytics (cihaza özgü)
   Object.values(data).forEach(byUser=>Object.values(byUser).forEach(rec=>Object.entries(rec.products||{}).forEach(([p,c])=>pm[p]=(pm[p]||0)+c)));
+  // Firestore proposals'tan da say (cihazlar arası)
+  proposals.forEach(prop=>(prop.urunler||[]).forEach(u=>{ if(u.urun) pm[u.urun]=(pm[u.urun]||0)+1; }));
   const tp=Object.entries(pm).sort((a,b)=>b[1]-a[1]).slice(0,15);
   const mx=tp.length?tp[0][1]:1;
   const el=document.getElementById('admin-product-list');
@@ -1291,6 +1487,72 @@ function renderAdminProducts() {
   el.innerHTML=tp.map(([p,c],i)=>
     `<div class="product-row"><span class="product-rank">${i+1}</span><div class="product-bar-wrap"><div class="product-bar-name">${p}</div><div class="product-bar-track"><div class="product-bar-fill" style="width:${Math.round(c/mx*100)}%"></div></div></div><span class="product-bar-count">${c}x</span></div>`
   ).join('')||'<div class="admin-empty">Veri yok</div>';
+}
+
+function renderSepetDetay() {
+  const el = document.getElementById('admin-sepet-detay');
+  if(!el) return;
+  if(!proposals || !proposals.length) {
+    el.innerHTML='<div class="admin-empty">Teklif verisi yükleniyor, lütfen bekleyin...</div>';
+    setTimeout(renderSepetDetay, 1500);
+    return;
+  }
+  // Bekleyen teklifleri kullanıcı bazında grupla
+  const bekliyor = proposals.filter(p=>p.durum==='bekliyor'||p.durum==='sureDoldu');
+  if(!bekliyor.length) { el.innerHTML='<div class="admin-empty">Bekleyen teklif yok</div>'; return; }
+  // Kullanıcı bazında grupla
+  const byUser = {};
+  bekliyor.forEach(p=>{
+    if(!byUser[p.user]) byUser[p.user]={props:[]};
+    byUser[p.user].props.push(p);
+  });
+  el.innerHTML = Object.entries(byUser).map(([user,d])=>{
+    const ini = user.split('@')[0].slice(0,2).toUpperCase();
+    const cards = d.props.map(p=>`
+      <div class="sepet-prop-card">
+        <div class="sepet-prop-header">
+          <span class="proposal-status status-${p.durum}">${p.durum==='bekliyor'?'⏳':'⌛'}</span>
+          <span style="font-weight:700;font-size:.82rem">${p.custName}</span>
+          <span style="font-size:.72rem;color:var(--text-2)">${fmtDate(p.ts)}</span>
+          ${isAdmin()?`<button class="btn-edit-prop haptic-btn" onclick="openEditProp('${p.id}')">✏️</button><button class="btn-del-prop haptic-btn" onclick="deleteProp('${p.id}')">🗑</button>`:''}
+        </div>
+        <div style="font-size:.75rem;color:var(--text-2);margin-top:4px">${(p.urunler||[]).map(u=>`• ${u.urun}`).join(' ')}</div>
+        <div style="font-size:.72rem;margin-top:3px">💳 ${p.odeme} ${p.sureBitis?'· ⏰ '+new Date(p.sureBitis).toLocaleDateString('tr-TR'):''}</div>
+      </div>`).join('');
+    return `<div class="sepet-user-block">
+      <div class="sepet-user-header">
+        <div class="user-avatar" style="width:32px;height:32px;font-size:.75rem">${ini}</div>
+        <span style="font-weight:700">${user.split('@')[0]}</span>
+        <span class="stok-badge sk" style="background:#dbeafe;color:#1e40af">${d.props.length} teklif</span>
+      </div>
+      ${cards}
+    </div>`;
+  }).join('');
+}
+
+function renderUyuyanStok(urunler) {
+  if(!urunler || !Array.isArray(urunler)) urunler = window._cachedUrunler || allProducts || [];
+  if(!urunler.length) return;
+  const el = document.getElementById('admin-uyuyan-stok');
+  if(!el) return;
+  // Analytics + proposals + sales'tan sepete giren ürünler
+  const data=JSON.parse(localStorage.getItem('analytics_local')||'{}');
+  const eklenen = new Set();
+  Object.values(data).forEach(byUser=>Object.values(byUser).forEach(rec=>Object.keys(rec.products||{}).forEach(p=>eklenen.add(p))));
+  proposals.forEach(p=>(p.urunler||[]).forEach(u=>{ if(u.urun) eklenen.add(u.urun); }));
+  sales.forEach(s=>(s.urunler||[]).forEach(u=>{ if(u.urun) eklenen.add(u.urun); }));
+
+  const uyuyan = urunler.filter(r=>{
+    const stok = _getStok(r);
+    const ad = _getUrunAdi(r);
+    return stok > 0 && !eklenen.has(ad);
+  });
+  if(!uyuyan.length){ el.innerHTML='<div class="stok-ok">✅ Uyuyan stok yok</div>'; return; }
+  el.innerHTML = uyuyan.slice(0,20).map(r=>{
+    const ad = _getUrunAdi(r);
+    const stok = _getStok(r);
+    return `<div class="stok-alert"><span class="stok-dot" style="background:#a78bfa"></span><span class="stok-urun">${ad}</span><span class="stok-badge sk" style="background:#f3e8ff;color:#7c3aed">${stok} adet</span></div>`;
+  }).join('');
 }
 
 function resetProductStats() {
@@ -1317,6 +1579,187 @@ function renderAdminSales() {
   ).join(''):'<div class="admin-empty">Satış yok</div>';
 }
 
+
+// ─── EXCEL'E AKTAR (Sepet) ────────────────────────────────────
+function exportBasketToExcel() {
+  if(!basket.length) { alert('Sepet boş!'); return; }
+  haptic(18);
+  const t = basketTotals();
+  const disc = discountAmount > 0
+    ? (discountType==='PERCENT' ? '%'+discountAmount : fmt(discountAmount)+' TL')
+    : '-';
+
+  // CSV içeriği oluştur
+  const rows = [
+    ['Ürün', 'Stok', 'Açıklama', 'D.Kart (₺)', '4T AWM (₺)', 'Tek Çekim (₺)', 'Nakit (₺)', 'Kod']
+  ];
+  basket.forEach(item => {
+    rows.push([
+      item.urun, item.stok, item.aciklama,
+      item.dk, item.awm, item.tek, item.nakit, item.kod||''
+    ]);
+  });
+  // İndirim satırı
+  if(discountAmount > 0) {
+    const getD = v => discountType==='TRY' ? discountAmount : v*discountAmount/100;
+    rows.push(['İNDİRİM ('+disc+')', '', '',
+      -getD(t.dk).toFixed(2), -getD(t.awm).toFixed(2),
+      -getD(t.tek).toFixed(2), -getD(t.nakit).toFixed(2), '']);
+  }
+  // Toplam satırı
+  rows.push(['NET TOPLAM', '', '',
+    (t.dk-( discountType==='TRY'?discountAmount:t.dk*discountAmount/100 )).toFixed(2),
+    (t.awm-(discountType==='TRY'?discountAmount:t.awm*discountAmount/100)).toFixed(2),
+    (t.tek-(discountType==='TRY'?discountAmount:t.tek*discountAmount/100)).toFixed(2),
+    (t.nakit-(discountType==='TRY'?discountAmount:t.nakit*discountAmount/100)).toFixed(2),
+    '']);
+
+  // BOM + CSV oluştur (Excel Türkçe karakter uyumlu)
+  const BOM = '﻿';
+  const csv = BOM + rows.map(r =>
+    r.map(v => {
+      const s = String(v ?? '').replace(/"/g, '""');
+      return /[,;"\n]/.test(s) ? `"${s}"` : s;
+    }).join(';')   // Türkiye Excel ayarı: noktalı virgül
+  ).join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = 'aygun-teklif-' + new Date().toLocaleDateString('tr-TR').replace(/\./g,'-') + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ─── TEKLİF DÜZENLEME MODAL (Admin) ──────────────────────────
+function openEditProp(id) {
+  if(!isAdmin()) return;
+  haptic(16);
+  const p = proposals.find(pr=>pr.id===id);
+  if(!p) return;
+
+  // Mevcut düzenleme modalı varsa kaldır
+  const existing = document.getElementById('edit-prop-modal');
+  if(existing) existing.remove();
+
+  const urunRows = (p.urunler||[]).map((u,i) =>
+    `<div class="edit-urun-row" data-idx="${i}">
+      <input class="edit-urun-name" value="${u.urun||''}" placeholder="Ürün adı">
+      <input class="edit-urun-nakit" type="number" value="${u.nakit||0}" placeholder="Nakit ₺" style="width:100px">
+      <button class="btn-del-urun haptic-btn" onclick="this.closest('.edit-urun-row').remove()">🗑</button>
+    </div>`
+  ).join('');
+
+  const sureVal = p.sureBitis ? p.sureBitis.split('T')[0] : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-prop-modal';
+  modal.className = 'modal-overlay';
+  modal.style.cssText = 'display:flex;z-index:9999';
+  modal.innerHTML = `
+    <div class="wa-modal-content" style="max-width:560px;max-height:90vh;overflow-y:auto">
+      <div class="modal-header">
+        <h3>✏️ Teklif Düzenle</h3>
+        <button class="close-modal-btn haptic-btn" onclick="document.getElementById('edit-prop-modal').remove()">✕</button>
+      </div>
+      <div class="wa-modal-body">
+        <div class="wa-grid">
+          <div class="footer-field">
+            <label>Müşteri Adı</label>
+            <input type="text" id="ep-name" value="${p.custName||''}">
+          </div>
+          <div class="footer-field">
+            <label>Telefon</label>
+            <input type="tel" id="ep-phone" value="${p.phone||''}">
+          </div>
+          <div class="footer-field">
+            <label>Ödeme Şekli</label>
+            <input type="text" id="ep-odeme" value="${p.odeme||''}">
+          </div>
+          <div class="footer-field">
+            <label>İndirim (₺)</label>
+            <input type="number" id="ep-indirim" value="${p.indirim||0}">
+          </div>
+          <div class="footer-field">
+            <label>Teklif Geçerlilik Tarihi</label>
+            <input type="date" id="ep-sure" value="${sureVal}">
+          </div>
+          <div class="footer-field">
+            <label>Durum</label>
+            <select id="ep-durum">
+              <option value="bekliyor"    ${p.durum==='bekliyor'?'selected':''}>⏳ Bekliyor</option>
+              <option value="satisDondu"  ${p.durum==='satisDondu'?'selected':''}>✅ Satışa Döndü</option>
+              <option value="iptal"       ${p.durum==='iptal'?'selected':''}>✕ İptal</option>
+              <option value="sureDoldu"   ${p.durum==='sureDoldu'?'selected':''}>⌛ Süresi Doldu</option>
+            </select>
+          </div>
+          <div class="footer-field full">
+            <label>Not</label>
+            <textarea id="ep-not" rows="2">${p.not||''}</textarea>
+          </div>
+        </div>
+        <div class="wa-section-divider">Ürünler</div>
+        <div id="ep-urun-list">${urunRows}</div>
+        <button class="btn-add-urun haptic-btn" onclick="addEditUrunRow()" style="margin-top:8px;width:100%">+ Ürün Ekle</button>
+        <button class="wa-send-btn haptic-btn" onclick="saveEditProp('${p.id}')" style="margin-top:16px">💾 Kaydet</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  requestAnimationFrame(()=>modal.classList.add('open'));
+}
+
+function addEditUrunRow() {
+  const list = document.getElementById('ep-urun-list');
+  if(!list) return;
+  const div = document.createElement('div');
+  div.className = 'edit-urun-row';
+  div.innerHTML = `<input class="edit-urun-name" placeholder="Ürün adı" value="">
+    <input class="edit-urun-nakit" type="number" placeholder="Nakit ₺" value="0" style="width:100px">
+    <button class="btn-del-urun haptic-btn" onclick="this.closest('.edit-urun-row').remove()">🗑</button>`;
+  list.appendChild(div);
+}
+
+async function saveEditProp(id) {
+  haptic(22);
+  const idx = proposals.findIndex(p=>p.id===id);
+  if(idx===-1) return;
+
+  const urunRows = document.querySelectorAll('#ep-urun-list .edit-urun-row');
+  const yeniUrunler = [];
+  urunRows.forEach(row => {
+    const name  = row.querySelector('.edit-urun-name')?.value?.trim() || '';
+    const nakit = parseFloat(row.querySelector('.edit-urun-nakit')?.value) || 0;
+    if(name) yeniUrunler.push({ urun:name, nakit, dk:nakit, awm:nakit, tek:nakit, stok:0, aciklama:'-', kod:'' });
+  });
+
+  const sureVal = document.getElementById('ep-sure')?.value;
+  proposals[idx] = {
+    ...proposals[idx],
+    custName: document.getElementById('ep-name')?.value?.trim() || proposals[idx].custName,
+    phone:    document.getElementById('ep-phone')?.value?.trim() || proposals[idx].phone,
+    odeme:    document.getElementById('ep-odeme')?.value?.trim() || proposals[idx].odeme,
+    indirim:  parseFloat(document.getElementById('ep-indirim')?.value) || 0,
+    durum:    document.getElementById('ep-durum')?.value || proposals[idx].durum,
+    not:      document.getElementById('ep-not')?.value?.trim() || '',
+    urunler:  yeniUrunler.length ? yeniUrunler : proposals[idx].urunler,
+    sureBitis: sureVal ? new Date(sureVal).toISOString() : proposals[idx].sureBitis,
+    editedAt: new Date().toISOString(),
+    editedBy: currentUser?.Email||'admin'
+  };
+
+  localStorage.setItem('aygun_proposals', JSON.stringify(proposals));
+  await fbSaveProp(proposals[idx]);
+  document.getElementById('edit-prop-modal')?.remove();
+  renderProposals();
+  const adminList = document.getElementById('admin-proposals-list');
+  if(adminList) renderProposals(adminList, true);
+  const ct = document.getElementById('change-toast');
+  if(ct){ ct.textContent='✓ Teklif güncellendi'; ct.classList.add('show'); setTimeout(()=>ct.classList.remove('show'),2000); }
+}
+
 // ─── ES MODULE → WINDOW BAĞLANTISI ──────────────────────────────
 // type="module" script'lerde fonksiyonlar global değildir.
 // HTML onclick="..." için window'a açıkça atanmalıdır.
@@ -1332,6 +1775,7 @@ Object.assign(window, {
   closeChangePopup,
   addToBasket, removeFromBasket, clearBasket, applyDiscount,
   updatePropStatus, resendProposalWa, openPropNote,
-  resetProductStats,
+  resetProductStats, exportBasketToExcel, renderUyuyanStok, deleteProp, renderSepetDetay,
+  openEditProp, addEditUrunRow, saveEditProp,
   openMessages: ()=>{},   // kaldırıldı ama eski referanslar için
 });
