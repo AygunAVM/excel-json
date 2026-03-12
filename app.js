@@ -1490,7 +1490,7 @@ function _updateChangeBtn() {
     btn.disabled      = !ready;
     btn.style.opacity = ready ? '1' : '0.45';
     btn.style.cursor  = ready ? 'pointer' : 'not-allowed';
-    btn.textContent   = ready ? '✓ Anladım, Kapat'
+    btn.textContent   = ready ? 'Listeye Geçiş'
                               : 'Tüm değişimleri işaretleyin (' + allNew.length + ' kaldı)';
   });
 }
