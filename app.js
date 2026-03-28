@@ -1418,33 +1418,34 @@ async function finalizeAksiyon() {
     let waMsg = `Aygün AVM Teklif\n\n`;
     waMsg += `*Sn* ${custName}\n`;
     waMsg += `*Telefon* ${phone}\n\n`;
-    waMsg += `Ürünler\n`;
+    waMsg += `\`Ürünler\`\n`;
     basket.forEach(i => { waMsg += `  - ${i.urun}\n`; });
 
-    let indirimMetni = '';
-    if (toplamIndirim > 0) {
-      indirimMetni = `\n_İndirimler -${fmt(toplamIndirim)} ₺_\n\n`;
-    } else {
-      indirimMetni = `\n\n`;
-    }
-    waMsg += indirimMetni;
+let indirimMetni = '';
+if (toplamIndirim > 0) {
+  indirimMetni = `\n_İndirimler -${fmt(toplamIndirim)}_\n\n`;  // ₺ kaldırıldı
+} else {
+  indirimMetni = `\n\n`;
+}
+waMsg += indirimMetni;
 
     // Ödeme tipine göre dinamik kısım
-    if (abakusSelection === null) {
-      waMsg += `* Nakit\n`;
-      waMsg += `*Toplam* ${fmt(indirimliNakit)}\n\n`;
-    } else if (abakusSelection.taksit === 1) {
-      const kartAdi = abakusSelection.kart || abakusSelection.label || '';
-      waMsg += `* ${kartAdi}\n`;
-      waMsg += `*${fmt(tahsilat)}* Tek Çekim\n\n`;
-    } else {
-      const kartAdi = abakusSelection.kart || abakusSelection.label || '';
-      const taksitSayisi = abakusSelection.taksit;
-      const aylikTutar = Math.ceil(tahsilat / taksitSayisi);
-      waMsg += `* ${kartAdi}\n`;
-      waMsg += `*${fmt(aylikTutar)}* x ${taksitSayisi} Taksit\n`;
-      waMsg += `*Toplam* ${fmt(tahsilat)}\n\n`;
-    }
+if (abakusSelection === null) {
+  waMsg += `* Nakit\n`;
+  waMsg += `*Toplam* ${fmt(indirimliNakit)}\n\n`;
+} else if (Number(abakusSelection.taksit) === 1) {  // ⬅️ Güvenli karşılaştırma
+  const kartAdi = abakusSelection.kart || abakusSelection.label || '';
+  waMsg += `* ${kartAdi}\n`;
+  waMsg += `*${fmt(tahsilat)}* Tek Çekim\n\n`;
+} else {
+  // Taksitli kart kısmı
+  const kartAdi = abakusSelection.kart || abakusSelection.label || '';
+  const taksitSayisi = abakusSelection.taksit;
+  const aylikTutar = Math.ceil(tahsilat / taksitSayisi);
+  waMsg += `* ${kartAdi}\n`;
+  waMsg += `*${fmt(aylikTutar)}* x ${taksitSayisi} Taksit\n`;
+  waMsg += `*Toplam* ${fmt(tahsilat)}\n\n`;
+}
 
     // Kapanış
     waMsg += `> Teklifimize konu ürünlerin fiyatlarını değerlendirmelerinize sunar, ihtiyaç duyacağınız her konuda memnuniyetle destek vermeye hazır olduğumuzu belirtir; çalışmalarınızda kolaylıklar dileriz. Teklif geçerlilik *${expDate}* tarihidir.\n\n`;
