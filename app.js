@@ -4494,7 +4494,7 @@ async function loadFunnelAnaliz(gunAralik = 90, force = false) {
     // Debug — geliştirme kolaylığı için
     console.log('📊 Gam analiz:', gamSirali.length, 'gam,', 
       gamGercek.length, 'gerçek gam,',
-      Object.keys(urunGamMap).length, 'ürün map'te');
+      Object.keys(urunGamMap).length, 'urun map-te');
 
 // ── PERSONEL İSTATİSTİKLERİ ──────────────────────────────
 const pMap = {};
