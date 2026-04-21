@@ -9993,7 +9993,6 @@ function renderSiparisBildirimBar() {
     </div>`;
   } catch(e) { bar.style.display = 'none'; }
 }
-}
 
 // ═══════════════════════════════════════════════════════════════
 // 🔥 TREND VE VİTRİN RENDER — Yeniden yazım
